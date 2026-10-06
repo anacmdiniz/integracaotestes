@@ -187,6 +187,18 @@ describe('clientes', () => {
         expect(resposta.status).toBe(200);
     });
 
+    it('ct-016 - não cria cliente sem informar o nome', async () => {
+        const resposta = await request(app)
+            .post('/clientes')
+            .send({
+                cpf: '44455566677',
+                cep: cepValido,
+                numero: 30
+            });
+
+        expect(resposta.status).toBe(500);
+    });
+
     it('ct-017 - atualiza cliente com dados válidos', async () => {
         // o cpf não muda, mas o controller pede ele de novo no corpo da requisição
         const cliente = await ClienteFactory.create(
@@ -216,5 +228,39 @@ describe('clientes', () => {
         const resposta = await request(app).delete(`/clientes/${cliente.id}`);
 
         expect(resposta.status).toBe(200);
+    });
+});
+
+describe('veiculos', () => {
+    beforeEach(async () => {
+        vi.clearAllMocks();
+    });
+
+    afterEach(async () => {
+        await clearDatabase();
+
+        vi.resetAllMocks();
+    });
+
+    it('ct-019 - cria veículo com dados válidos', async () => {
+        const cliente = await ClienteFactory.create(
+            'Florisvaldo Junior', '12345678900', '13185880',
+            'Rua Teste', 'Centro', 'Jundiaí', 'SP', '123', null
+        );
+        const montadora = await MontadoraFactory.create('Fiat', 'Itália');
+
+        const resposta = await request(app)
+            .post('/veiculos')
+            .send({
+                modelo: 'Palio',
+                placa: 'ABC1234',
+                ano: 2015,
+                cor: 'Preto',
+                valor: 20000,
+                idCliente: cliente.id,
+                idMontadora: montadora.id
+            });
+
+        expect(resposta.status).toBe(201);
     });
 });
