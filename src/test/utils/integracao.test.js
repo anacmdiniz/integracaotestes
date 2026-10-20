@@ -1,25 +1,35 @@
+// app sem listen: o supertest simula as requisições HTTP em memória
 import app from '../../app.js';
 import request from 'supertest';
+// funções do Vitest: describe/it organizam os testes, expect faz a asserção,
+// beforeEach/afterEach são hooks e vi é o utilitário de mocks
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Factories: inserem dados direto no banco para preparar o cenário (sem validação e sem API de CEP)
 import { MontadoraFactory } from '../factories/MontadoraFactory.js';
 import { ClienteFactory } from '../factories/ClienteFactory.js';
 import { VeiculoFactory } from '../factories/VeiculoFactory.js';
+// limpa as tabelas entre os testes
 import { clearDatabase } from './clearDatabase.js';
 
+// CEP real, usado nos testes de cliente (a API de CEP é consultada de verdade)
 const cepValido = '13185880';
 
 describe('montadoras', () => {
     beforeEach(async () => {
+        // zera o histórico dos mocks (hoje não há mocks, é preventivo)
         vi.clearAllMocks();
     });
 
     afterEach(async () => {
+        // isolamento: cada teste começa com o banco vazio
         await clearDatabase();
 
+        // zera histórico e implementação dos mocks
         vi.resetAllMocks();
     });
 
+    // caminho feliz: dados válidos -> 201 Created
     it('ct-001 - cria montadora com dados válidos', async () => {
         const resposta = await request(app)
             .post('/montadoras')
@@ -28,15 +38,19 @@ describe('montadoras', () => {
         expect(resposta.status).toBe(201);
     });
 
+    // validação do model: nome precisa ter no mínimo 3 caracteres
     it('ct-002 - não cria montadora com nome menor que 3 letras', async () => {
         const resposta = await request(app)
             .post('/montadoras')
             .send({ nome: 'Fi', pais: 'Itália' });
 
+        // o controller devolve 500 para qualquer erro de validação
         expect(resposta.status).toBe(500);
     });
 
+    // validação do model: nome pode ter no máximo 60 caracteres
     it('ct-003 - não cria montadora com nome maior que 60 letras', async () => {
+        // gera uma string com 61 letras 'a'
         const nomeGigante = 'a'.repeat(61);
 
         const resposta = await request(app)
@@ -46,6 +60,7 @@ describe('montadoras', () => {
         expect(resposta.status).toBe(500);
     });
 
+    // campo obrigatório ausente: pais chega como undefined
     it('ct-004 - não cria montadora sem informar o país', async () => {
         const resposta = await request(app)
             .post('/montadoras')
@@ -54,6 +69,7 @@ describe('montadoras', () => {
         expect(resposta.status).toBe(500);
     });
 
+    // validação do model: país precisa ter no mínimo 2 caracteres
     it('ct-005 - não cria montadora com país menor que 2 letras', async () => {
         const resposta = await request(app)
             .post('/montadoras')
@@ -63,6 +79,7 @@ describe('montadoras', () => {
     });
 
     it('ct-006 - lista montadoras cadastradas', async () => {
+        // Arrange: cria 2 montadoras pela Factory
         await MontadoraFactory.create('Fiat', 'Itália');
         await MontadoraFactory.create('Ferrari', 'Itália');
 
@@ -74,6 +91,7 @@ describe('montadoras', () => {
     it('ct-007 - atualiza montadora com dados válidos', async () => {
         const montadora = await MontadoraFactory.create('Fiat', 'Itália');
 
+        // o id vai na query string (?id=), não na URL
         const resposta = await request(app)
             .put(`/montadoras?id=${montadora.id}`)
             .send({ nome: 'Fiat Chrysler', pais: 'Itália/EUA' });
@@ -84,18 +102,22 @@ describe('montadoras', () => {
     it('ct-008 - deleta montadora que não tem veículo', async () => {
         const montadora = await MontadoraFactory.create('Volvo', 'Suécia');
 
+        // aqui o id vai na URL (/:id)
         const resposta = await request(app).delete(`/montadoras/${montadora.id}`);
 
         expect(resposta.status).toBe(200);
     });
 
+    // id inexistente: affectedRows === 0 no controller -> 404
     it('ct-009 - não deleta montadora com id que não existe', async () => {
         const resposta = await request(app).delete('/montadoras/999999');
 
         expect(resposta.status).toBe(404);
     });
 
+    // integridade referencial: o MySQL bloqueia o DELETE por causa da chave estrangeira
     it('ct-010 - não deleta montadora que tem veículo vinculado', async () => {
+        // ordem importa: cliente e montadora primeiro, veículo depois (FKs)
         const cliente = await ClienteFactory.create(
             'Florisvaldo Junior', '12345678900', '13185880',
             'Rua Teste', 'Centro', 'Jundiaí', 'SP', '123', null
@@ -105,6 +127,7 @@ describe('montadoras', () => {
 
         const resposta = await request(app).delete(`/montadoras/${montadora.id}`);
 
+        // o erro do banco cai no catch do controller -> 500
         expect(resposta.status).toBe(500);
     });
 });
@@ -120,6 +143,7 @@ describe('clientes', () => {
         vi.resetAllMocks();
     });
 
+    // caminho feliz: o controller consulta o CEP e preenche o endereço sozinho
     it('ct-011 - cria cliente com dados válidos e cep existente', async () => {
         const resposta = await request(app)
             .post('/clientes')
@@ -134,6 +158,7 @@ describe('clientes', () => {
         expect(resposta.status).toBe(201);
     });
 
+    // CPF ausente: barrado pela validação do model
     it('ct-012 - não cria cliente sem informar o cpf', async () => {
         const resposta = await request(app)
             .post('/clientes')
@@ -146,6 +171,7 @@ describe('clientes', () => {
         expect(resposta.status).toBe(500);
     });
 
+    // nome com menos de 3 caracteres
     it('ct-013 - não cria cliente com nome menor que 3 letras', async () => {
         const resposta = await request(app)
             .post('/clientes')
@@ -159,6 +185,7 @@ describe('clientes', () => {
         expect(resposta.status).toBe(500);
     });
 
+    // CEP com formato inválido: a consulta/validação do CEP falha
     it('ct-014 - não cria cliente com cep em formato errado', async () => {
         const resposta = await request(app)
             .post('/clientes')
@@ -173,6 +200,7 @@ describe('clientes', () => {
     });
 
     it('ct-015 - lista clientes cadastrados', async () => {
+        // Arrange: 2 clientes criados direto no banco (endereço já pronto)
         await ClienteFactory.create(
             'Zeca Pagodinho', '11111111111', '13185880',
             'Rua A', 'Centro', 'Jundiaí', 'SP', '10', null
@@ -187,6 +215,7 @@ describe('clientes', () => {
         expect(resposta.status).toBe(200);
     });
 
+    // nome ausente: barrado pela validação do model
     it('ct-016 - não cria cliente sem informar o nome', async () => {
         const resposta = await request(app)
             .post('/clientes')
@@ -206,6 +235,7 @@ describe('clientes', () => {
             'Rua Teste', 'Centro', 'Jundiaí', 'SP', '123', 'Apenas um teste!'
         );
 
+        // PUT com id na query string; o endereço é refeito a partir do CEP
         const resposta = await request(app)
             .put(`/clientes?id=${cliente.id}`)
             .send({
@@ -243,12 +273,14 @@ describe('veiculos', () => {
     });
 
     it('ct-019 - cria veículo com dados válidos', async () => {
+        // o veículo depende de cliente e montadora (chaves estrangeiras)
         const cliente = await ClienteFactory.create(
             'Florisvaldo Junior', '12345678900', '13185880',
             'Rua Teste', 'Centro', 'Jundiaí', 'SP', '123', null
         );
         const montadora = await MontadoraFactory.create('Fiat', 'Itália');
 
+        // usa os ids reais gerados pelo banco
         const resposta = await request(app)
             .post('/veiculos')
             .send({
